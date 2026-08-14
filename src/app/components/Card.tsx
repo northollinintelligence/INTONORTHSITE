@@ -4,7 +4,12 @@
 import { motion } from "framer-motion";
 
 export default function Card() {
-  // ¡Sin efectos, sin estados complicados, solo el texto fijo!
+    const scrollToContact = () => {
+    const contact = document.getElementById("contact");
+    if (contact) {
+      contact.scrollIntoView({ behavior: "smooth" });
+    }
+  };
   
   return (
     <div className="mx-auto w-full max-w-5xl px-6">
@@ -87,6 +92,26 @@ export default function Card() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, delay: 1.8 }}
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+        className="group relative mt-10 inline-flex items-center gap-3 rounded-full bg-white px-8 py-3 text-sm font-medium text-indigo-900 transition-all hover:shadow-xl hover:shadow-white/10"
+      >
+        <span>Iniciar contacto</span>
+        <motion.span
+          animate={{ x: [0, 4, 0] }}
+          transition={{ duration: 1.5, repeat: Infinity }}
+          className="text-lg"
+        >
+          →
+        </motion.span>
+      </motion.button>
+
+      {/* Botón con scroll a contacto */}
+      <motion.button
+        onClick={scrollToContact}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 2 }}
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         className="group relative mt-10 inline-flex items-center gap-3 rounded-full bg-white px-8 py-3 text-sm font-medium text-indigo-900 transition-all hover:shadow-xl hover:shadow-white/10"

@@ -2,6 +2,10 @@
 @import "tailwindcss";
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  
   body {
     @apply min-h-screen bg-slate-900;
     font-feature-settings: "ss01", "ss02", "cv01", "cv02";
