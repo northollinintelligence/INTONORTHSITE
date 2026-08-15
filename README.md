@@ -1,36 +1,40 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# North Ollin - Backend
 
-## Getting Started
-
-First, run the development server:
+## Levantar en local
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+python -m venv venv
+source venv/bin/activate   # en Windows: venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env       # y llena los valores reales
+uvicorn app.main:app --reload
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abre http://localhost:8000 — debe responder `{"status": "ok"}`.
+Docs automáticos de la API: http://localhost:8000/docs
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Dar de alta un cliente/negocio nuevo
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+El chatbot es multi-cliente: un mismo backend atiende a varios negocios sin
+mezclar su información. Para agregar uno nuevo, mándale un POST a `/clients`
+(puedes hacerlo desde /docs directo en el navegador) con:
 
-## Learn More
+```json
+{
+  "name": "Nombre del negocio",
+  "industry": "Rubro, ej. restaurante",
+  "domain": "dominio-del-cliente.com",
+  "business_info": "Descripción del negocio, servicios, horarios, precios, etc.",
+  "tone": "amable y profesional"
+}
+```
 
-To learn more about Next.js, take a look at the following resources:
+Te regresa un `id` — ese `id` es el `client_id` que el widget de chat de ese
+negocio debe mandar en cada mensaje a `/chat`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deploy en Railway
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Conecta este repo desde el dashboard de Railway.
+2. Agrega las variables de entorno del `.env.example` en Settings → Variables.
+3. Railway detecta FastAPI automático, pero si pide start command usa:
+   `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
