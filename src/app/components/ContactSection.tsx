@@ -27,7 +27,7 @@ export default function ContactSection() {
   };
 
   return (
-    <section className="min-h-screen flex items-center px-6 py-20 md:px-12 bg-slate-900">
+    <section id="contact" className="min-h-screen flex items-center px-6 py-20 md:px-12 bg-slate-900">
       <div className="absolute inset-0 overflow-hidden -z-10">
         <div className="absolute -top-60 -right-60 h-[500px] w-[500px] rounded-full bg-indigo-500/10 blur-[100px]" />
         <div className="absolute -bottom-60 -left-60 h-[500px] w-[500px] rounded-full bg-purple-500/10 blur-[100px]" />
