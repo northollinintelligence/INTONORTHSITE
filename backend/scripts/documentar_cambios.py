@@ -28,7 +28,7 @@ def preguntar_groq(prompt, max_tokens=800):
             "Content-Type": "application/json",
         },
         json={
-            "model": "llama-3.3-70b-versatile",
+            "model": "openai/gpt-oss-120b",
             "max_tokens": max_tokens,
             "messages": [{"role": "user", "content": prompt}],
         },
