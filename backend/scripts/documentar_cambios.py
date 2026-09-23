@@ -4,7 +4,7 @@ import requests
 from datetime import datetime
 import json
 
-GROQ_API_KEY = os.environ["GROQ_API_KEY_DOC"]
+GROQ_API_KEY = os.environ["GROQ_API_KEY"]
 COMMIT_SHA = os.environ["GITHUB_SHA"]
 COMMIT_AUTHOR = os.environ.get("COMMIT_AUTHOR", "desconocido")
 COMMIT_MESSAGE = os.environ.get("COMMIT_MESSAGE", "")
