@@ -2,25 +2,30 @@ import os
 import subprocess
 import requests
 from datetime import datetime
-import json
 
 GROQ_API_KEY = os.environ["GROQ_API_KEY"]
 COMMIT_SHA = os.environ["GITHUB_SHA"]
 COMMIT_AUTHOR = os.environ.get("COMMIT_AUTHOR", "desconocido")
 COMMIT_MESSAGE = os.environ.get("COMMIT_MESSAGE", "")
 
+# Diff completo, con más contexto de líneas alrededor de cada cambio
 diff = subprocess.run(
-    ["git", "diff", "HEAD~1", "HEAD"], capture_output=True, text=True
+    ["git", "diff", "-U10", "HEAD~1", "HEAD"], capture_output=True, text=True
 ).stdout
 
 if not diff.strip():
     print("No hay cambios que documentar.")
     exit(0)
 
-diff_recortado = diff[:12000]
+# Lista de archivos tocados, con líneas agregadas/eliminadas por archivo
+stat = subprocess.run(
+    ["git", "diff", "--stat", "HEAD~1", "HEAD"], capture_output=True, text=True
+).stdout
+
+diff_recortado = diff[:20000]
 
 
-def preguntar_groq(prompt, max_tokens=800):
+def preguntar_groq(prompt, max_tokens=1500):
     response = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
         headers={
@@ -30,6 +35,7 @@ def preguntar_groq(prompt, max_tokens=800):
         json={
             "model": "openai/gpt-oss-120b",
             "max_tokens": max_tokens,
+            "temperature": 0.3,
             "messages": [{"role": "user", "content": prompt}],
         },
     )
@@ -41,36 +47,100 @@ def preguntar_groq(prompt, max_tokens=800):
     return data["choices"][0]["message"]["content"]
 
 
-# 1. Resumen detallado de este cambio en particular
-prompt_detalle = f"""Eres un asistente que documenta cambios de código para un equipo no técnico.
-Te doy un git diff. Explica en español simple, con el detalle necesario para
-entender qué se hizo, qué archivos se tocaron y por qué probablemente se hizo
-(basado en el mensaje del commit). Usa viñetas. No inventes nada que no esté en el diff.
+# 1. Detalle técnico completo del cambio
+prompt_detalle = f"""Eres un ingeniero de software senior documentando un cambio de código
+para el historial técnico de un proyecto. Te doy un git diff con contexto extendido
+(10 líneas antes/después de cada cambio) y las estadísticas del commit.
 
+Autor del commit: {COMMIT_AUTHOR}
 Mensaje del commit: {COMMIT_MESSAGE}
 
-Diff:
-{diff_recortado}
-"""
-detalle = preguntar_groq(prompt_detalle)
+Estadísticas (archivos y líneas modificadas):
+{stat}
 
-# 2. Estructura completa del proyecto, para regenerar el resumen general
+Diff completo:
+{diff_recortado}
+
+Escribe la documentación de este cambio siguiendo EXACTAMENTE esta estructura en Markdown,
+sin omitir ninguna sección aunque tengas que inferir el motivo a partir del mensaje del commit
+o del propio código:
+
+**Archivos modificados:** lista cada archivo tocado.
+
+**Qué cambió, archivo por archivo:** para cada archivo, indica el número de línea aproximado
+(usa las referencias @@ del diff), qué decía el código ANTES (cita la línea o bloque exacto,
+en un bloque de código corto) y qué dice AHORA (igual, en bloque de código corto). Si es una
+línea agregada nueva (no había nada antes), dilo explícitamente como "línea nueva". Si es una
+eliminación, dilo como "línea eliminada".
+
+**Por qué se hizo:** explica la causa probable o confirmada del cambio, en español simple pero
+técnicamente preciso — por ejemplo si corrige un error, qué error corregía exactamente y por qué
+pasaba.
+
+**Impacto:** qué parte del sistema se ve afectada por este cambio (ej. "afecta las respuestas
+del chatbot en producción", "solo afecta el script de documentación, no el sitio").
+
+**Quién lo hizo:** el autor del commit.
+
+No inventes contenido que no esté respaldado por el diff. Si algo no se puede determinar con
+certeza (ej. el motivo exacto), dilo como "probablemente" y explica tu razonamiento en vez de
+afirmarlo como hecho.
+"""
+detalle = preguntar_groq(prompt_detalle, max_tokens=1800)
+
+# 2. Resumen general técnico y profundo
 estructura = subprocess.run(
     ["git", "ls-files"], capture_output=True, text=True
-).stdout[:4000]
+).stdout[:6000]
 
-prompt_resumen = f"""Eres un asistente que explica proyectos de software a personas no técnicas.
-Aquí está la lista de archivos de un proyecto (frontend en Next.js, backend en
-FastAPI/Python, base de datos Postgres, chatbot con Groq). Escribe un resumen
-general de 8-12 líneas explicando: qué hace el programa en general, cómo están
-conectadas sus partes (frontend, backend, base de datos, IA), y cómo funciona
-el flujo principal (ej. un visitante habla con el chatbot). Lenguaje simple,
-sin tecnicismos innecesarios.
+# Lee algunos archivos clave para dar contexto real, no solo nombres
+archivos_clave = [
+    "backend/app/main.py",
+    "backend/app/config.py",
+    "backend/app/routers/chat.py",
+    "backend/app/database.py",
+]
+contenido_clave = ""
+for archivo in archivos_clave:
+    if os.path.exists(archivo):
+        with open(archivo, encoding="utf-8", errors="ignore") as f:
+            contenido_clave += f"\n--- {archivo} ---\n{f.read()[:2000]}\n"
 
-Archivos del proyecto:
+prompt_resumen = f"""Eres un arquitecto de software escribiendo la documentación técnica
+general de un proyecto para que cualquier desarrollador nuevo lo entienda rápido, y también
+para que una persona no técnica entienda el panorama sin perderse.
+
+El proyecto tiene: frontend en Next.js (React, TypeScript, Tailwind), backend en Python
+con FastAPI, base de datos Postgres con SQLAlchemy, un chatbot que usa la API de Groq
+(modelos Llama/GPT-OSS), rate limiting con slowapi, y CORS configurado por dominio.
+
+Lista de archivos del repositorio:
 {estructura}
+
+Contenido de los archivos clave del backend:
+{contenido_clave}
+
+Escribe un resumen siguiendo esta estructura en Markdown:
+
+**Qué hace el sistema:** 2-3 líneas, en español simple, qué problema resuelve.
+
+**Arquitectura (cómo están conectadas las partes):** explica el flujo real: quién llama a quién,
+en qué orden, desde que un visitante escribe en el chat hasta que recibe respuesta. Sé preciso
+con los nombres de archivos/funciones reales que ves en el contenido de arriba.
+
+**Componentes principales:** una lista de los módulos/archivos más importantes y qué
+responsabilidad tiene cada uno.
+
+**Cómo se despliega:** dónde vive cada parte (frontend, backend, base de datos) según lo que
+puedas inferir.
+
+**Cosas a tener en cuenta / deuda técnica visible:** si notas algo en el código que valga la
+pena señalar (ej. "usa create_all en vez de migraciones versionadas"), menciónalo.
+
+Sé preciso y técnico pero con explicaciones que una persona sin experiencia en programación
+también pueda seguir si lee con calma — evita jerga sin explicarla la primera vez que aparece.
 """
-resumen_general = preguntar_groq(prompt_resumen, max_tokens=600)
+resumen_general = preguntar_groq(prompt_resumen, max_tokens=1500)
 
 # --- Arma el archivo completo ---
 fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
