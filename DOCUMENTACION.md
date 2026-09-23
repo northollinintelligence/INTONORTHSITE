@@ -1,100 +1,173 @@
 # Documentación de NORTH OLLIN
 
 > Este archivo se actualiza automáticamente con cada cambio subido a `main`.
-> Última actualización: 2026-09-23 06:22
+> Última actualización: 2026-09-23 06:26
 
 ## Resumen general del proyecto
 
-## 📄 Resumen del proyecto  
+# Documentación Técnica – Visión General del Proyecto  
 
-### **Qué hace el sistema**  
-Una página web permite a los visitantes conversar con un **chat‑bot inteligente** que responde usando modelos de lenguaje (Llama / GPT‑OSS) a través de la API de **Groq**.  
-El backend guarda información de los clientes (empresa que usa el chat) en una base de datos **PostgreSQL** y controla cuántas peticiones pueden hacerse por minuto.
+> **Objetivo:** Que cualquier desarrollador nuevo (y también una persona sin conocimientos técnicos) entienda rápidamente qué hace el sistema, cómo está construido y qué aspectos hay que vigilar al trabajar con él.
 
 ---
 
-## **Arquitectura (cómo están conectadas las partes)**  
+## **Qué hace el sistema**
 
-1. **Usuario → Frontend (Next.js)**  
-   * El visitante escribe un mensaje en el componente `ChatSection.tsx` (ubicado en `app/components/ChatSection.tsx`).  
-   * Ese componente llama a la API del backend mediante **fetch** a la ruta **`/chat`** (POST) del servidor FastAPI.
+North Ollin es una pequeña aplicación web que permite a los visitantes de un sitio corporativo conversar con un **chat‑bot inteligente**.  
+El bot recibe la pregunta del usuario, la envía a la API de Groq (modelos Llama / GPT‑OSS) y devuelve la respuesta generada.  
+Todo el proceso está protegido con **rate‑limiting** (para evitar abusos) y con **CORS** (solo dominios autorizados pueden usar la API).
 
-2. **Frontend → Backend (FastAPI)**  
-   * La petición llega a `backend/app/main.py`, donde el **FastAPI** está creado y configurado.  
-   * El middleware **CORS** (`CORSMiddleware`) verifica que el origen de la petición esté dentro de `settings.allowed_origins` (definido en `backend/app/config.py`).  
-   * El **rate limiter** (`slowapi`) intercepta la llamada; la regla `@limiter.limit("10/minute")` (en `backend/app/routers/chat.py`) permite como máximo 10 peticiones por minuto por cliente.
+---
 
-3. **Router de chat** (`backend/app/routers/chat.py`)  
-   * La función `chat` recibe el cuerpo de la petición (`ChatRequest` definido en `backend/app/schemas/chat.py`).  
-   * Usa la dependencia `get_db` (`backend/app/database.py`) para abrir una sesión con PostgreSQL.  
-   * Busca el cliente en la tabla `Client` (`backend/app/models/client.py`). Si no existe, devuelve **404**.
+## **Arquitectura (flujo de una conversación)**  
 
-4. **Servicio LLM** (`backend/app/services/llm_service.py`)  
-   * Con el mensaje del usuario y los datos del cliente, llama a `get_chat_response`.  
-   * Dentro de este archivo se construye la solicitud HTTP a la API de **Groq** usando la clave `groq_api_key` del archivo de configuración.  
-   * La respuesta del modelo (texto) se devuelve al router.
+A continuación se describe paso a paso lo que ocurre cuando un visitante escribe en el chat y recibe la respuesta, indicando los archivos y funciones reales que intervienen.
 
-5. **Respuesta al Frontend**  
-   * El router empaqueta la respuesta en `ChatResponse` (`backend/app/schemas/chat.py`) y la envía de vuelta al cliente HTTP.  
-   * En el navegador, `ChatSection.tsx` recibe el JSON `{ reply: "..." }` y lo muestra en la conversación.
+| Paso | Qué ocurre | Código / Archivo involucrado |
+|------|------------|------------------------------|
+| **1️⃣  Navegador → Frontend** | El usuario escribe un mensaje en el componente de chat. | `app/components/ChatSection.tsx` (React + TypeScript). |
+| **2️⃣  Frontend → Backend** | El componente llama al endpoint **POST `/chat`** con `client_id` y `message`. | En el cliente se usa `fetch`/`axios` (ver código de `ChatSection.tsx`). |
+| **3️⃣  Middleware de CORS** | FastAPI verifica que el origen del request (p.ej. `http://localhost:3000` o el dominio de producción) esté permitido. | Configuración en `backend/app/main.py` → `CORSMiddleware` con `settings.allowed_origins_list`. |
+| **4️⃣  Rate‑Limiting** | Antes de ejecutar la lógica del endpoint, **slowapi** comprueba que el cliente no haya superado el límite de 10 peticiones por minuto. | Decorador `@limiter.limit("10/minute")` en `backend/app/routers/chat.py`. |
+| **5️⃣  Validación y Dependencias** | FastAPI valida el cuerpo del request contra el **schema** `ChatRequest`. | `backend/app/schemas/chat.py`. |
+| **6️⃣  Acceso a la BD** | Se abre una sesión con PostgreSQL y se busca el registro del cliente (`Client`) cuyo `id` coincide con `client_id`. | `backend/app/database.py` → `get_db()`; consulta en `backend/app/routers/chat.py`. |
+| **7️⃣  Llamada al modelo LLM** | Si el cliente existe, se llama al servicio que envía el mensaje a la API de Groq y recibe la respuesta. | `backend/app/services/llm_service.py` → función `get_chat_response(message, client)`. |
+| **8️⃣  Respuesta al Frontend** | El endpoint devuelve un objeto `ChatResponse` con la respuesta del modelo. | `backend/app/schemas/chat.py` (modelo de salida) y `backend/app/routers/chat.py`. |
+| **9️⃣  Render en UI** | El frontend recibe el JSON, actualiza el estado del componente y muestra la respuesta al usuario. | `ChatSection.tsx` vuelve a renderizar la conversación. |
 
-6. **Persistencia**  
-   * La tabla `Client` se crea automáticamente al iniciar la aplicación gracias a `Base.metadata.create_all(bind=engine)` en `backend/app/main.py`.  
-   * Cada vez que se necesite información del cliente (por ejemplo, nombre de la empresa o configuración de prompt), se lee de PostgreSQL mediante **SQLAlchemy**.
-
-**Orden de ejecución resumido**
+> **Resumen visual**  
 
 ```
-Usuario → UI (ChatSection.tsx) → fetch POST /chat
-   ↓
-FastAPI (backend/app/main.py) → CORS → RateLimiter
-   ↓
-router.chat (backend/app/routers/chat.py)
-   ↓
-DB Session (backend/app/database.py) → SELECT client
-   ↓
-llm_service.get_chat_response (backend/app/services/llm_service.py)
-   ↓
-Llamada a Groq API → respuesta del modelo
-   ↓
-router devuelve ChatResponse → UI muestra respuesta
+[Browser] --(POST /chat)--> [FastAPI] --(CORS, RateLimit)--> [DB] (Client) 
+      |                                            |
+      +--------------------> [LLM Service] <------+
+                     (Groq API)
+      |
+   JSON response
+      |
+[Browser UI] (ChatSection) → muestra mensaje
 ```
 
 ---
 
-## **Componentes principales**  
+## **Componentes principales**
 
 | Área | Archivo / Módulo | Responsabilidad |
 |------|------------------|-----------------|
-| **Frontend** | `app/components/ChatSection.tsx` | UI del chat, envía peticiones al backend. |
-| | `app/components/Navbar.tsx`, `Card.tsx`, etc. | Layout y secciones estáticas. |
-| | `next.config.ts`, `tailwind.config.js` | Configuración de Next.js y Tailwind CSS. |
-| **Backend – API** | `backend/app/main.py` | Crea la aplicación FastAPI, configura CORS, rate limiting y registra routers. |
-| | `backend/app/config.py` | Lee variables de entorno (`.env`) y expone `settings`. |
-| | `backend/app/routers/chat.py` | Endpoint `/chat` que recibe mensajes y devuelve respuestas. |
-| | `backend/app/routers/clients.py` | CRUD básico de clientes (no mostrado pero presente). |
-| **Backend – Persistencia** | `backend/app/database.py` | Conexión a PostgreSQL, crea sesiones y define `Base`. |
-| | `backend/app/models/client.py` | Modelo SQLAlchemy que representa la tabla `client`. |
-| **Backend – Lógica de negocio** | `backend/app/services/llm_service.py` | Encapsula la llamada a la API de Groq y formatea la respuesta. |
-| **Rate limiting** | `backend/app/core/rate_limit.py` | Instancia de `Limiter` de *slowapi* usada por los routers. |
-| **Infraestructura** | `Dockerfile`, `docker-compose.yml` (no listados pero típicos) | (Si existen) describen cómo empaquetar la app. |
-| **Documentación** | `README.md`, `DOCUMENTACION.md` | Guías de instalación y uso. |
-
-*(Hay una copia casi idéntica de la estructura bajo la carpeta `app/` (frontend) y `backend/app/` (backend). Los archivos bajo `app/` son del **frontend**, mientras que los bajo `backend/app/` son del **backend**.)*
-
----
-
-## **Cómo se despliega**  
-
-| Componente | Lugar típico de alojamiento | Comentario |
-|------------|-----------------------------|------------|
-| **Frontend (Next.js)** | **Vercel**, Netlify o cualquier host estático que sirva Node.js. | El proyecto incluye `next.config.ts` y `package.json`, listo para `npm run build && npm start`. |
-| **Backend (FastAPI)** | **Railway**, **Render**, **Heroku**, **AWS Elastic Beanstalk**, o cualquier VPS con Docker. | La variable `DATABASE_URL` que provee Railway se usa en `backend/app/config.py`. |
-| **Base de datos** | **PostgreSQL** gestionado por Railway (u otro proveedor). | La URL se pasa vía `.env
+| **Configuración** | `backend/app/config.py` | Lee variables de entorno (`.env`) usando **pydantic Settings** (DB URL, clave de Groq, dominios CORS, credenciales de email). |
+| **Entrada de la API** | `backend/app/main.py` | Crea la aplicación FastAPI, registra middleware (CORS, rate‑limit), incluye routers y crea tablas con `Base.metadata.create_all`. |
+| **Rate‑Limiting** | `backend/app/core/rate_limit.py` | Instancia de **slowapi Limiter** que se usa como decorador en los endpoints. |
+| **Base de datos** | `backend/app/database.py` | Configura el motor SQLAlchemy, la sesión (`SessionLocal`) y la función de dependencia `get_db`. |
+| **Modelos ORM** | `backend/app/models/client.py` | Define la tabla `client` (id, nombre, etc.) con SQLAlchemy. |
+| **Schemas (DTO)** | `backend/app/schemas/chat.py` | Define los *pydantic* models `ChatRequest` y `ChatResponse` (validación de entrada y salida). |
+| **Routers** | `backend/app/routers/chat.py` <br> `backend/app/routers/clients.py` | Endpoints REST. `chat.py` contiene la lógica del chat; `clients.py` gestiona CRUD de clientes. |
+| **Servicio LLM** | `backend/app/services/llm_service.py` | Envía la petición a la API de Groq y devuelve el texto generado. |
+| **Frontend – Layout** | `app/layout.tsx` | Layout global de Next.js (incluye `Navbar`, `globals.css`). |
+| **Frontend – Componentes UI** | `app/components/*.tsx` (Card, Navbar, ServicesSection, ContactSection, ChatSection) | UI estática y dinámica; `ChatSection` es la que interactúa con el backend. |
+| **Estilos** | `app/globals.css`, `tailwind.config.js` (implícito) | Estilos con **Tailwind CSS**. |
+| **Scripts de CI** | `.github/workflows/documentar.yml` | Workflow de GitHub Actions
 
 ---
 
 ## Historial de cambios
+
+### 2026-09-23 06:26 — Diego51602
+
+**Commit:** `3125d47` — Merge branch 'Diego' of https://github.com/northollinintelligence/INTONORTHSITE into Diego
+
+## Archivos modificados
+- `DOCUMENTACION.md`
+
+## Qué cambió, archivo por archivo
+### `DOCUMENTACION.md`
+- **Referencia del diff:** `@@ -1,34 +1,180 @@`
+- **Líneas afectadas:** aproximadamente de la **línea 2** hasta la **línea 180** (todo el bloque añadido después del encabezado).
+- **Antes:**  
+  ```markdown
+  # Documentación de NORTH OLLIN
+  ```
+  (el archivo contenía únicamente el encabezado; el resto del contenido no existía).
+
+- **Ahora:**  
+  ```markdown
+  # Documentación de NORTH OLLIN
+  
+  > Este archivo se actualiza automáticamente con cada cambio subido a `main`.
+  > Última actualización: 2026-09-23 06:22
+  
+  ## Resumen general del proyecto
+  
+  ## 📄 Resumen del proyecto  
+  
+  ### **Qué hace el sistema**  
+  Una página web permite a los visitantes conversar con un **chat‑bot inteligente** que responde usando modelos de lenguaje (Llama / GPT‑OSS) a través de la API de **Groq**.  
+  El backend guarda información de los clientes (empresa que usa el chat) en una base de datos **PostgreSQL** y controla cuántas peticiones pueden hacerse por minuto.
+  
+  ---
+  
+  ## **Arquitectura (cómo están conectadas las partes)**  
+  
+  1. **Usuario → Frontend (Next.js)**  
+     * El visitante escribe un mensaje en el componente `ChatSection.tsx` (ubicado en `app/components/ChatSection.tsx`).  
+     * Ese componente llama a la API del backend mediante **fetch** a la ruta **`/chat`** (POST) del servidor FastAPI.
+  
+  2. **Frontend → Backend (FastAPI)**  
+     * La petición llega a `backend/app/main.py`, donde el **FastAPI** está creado y configurado.  
+     * El middleware **CORS** (`CORSMiddleware`) verifica que el origen de la petición esté dentro de `settings.allowed_origins` (definido en `backend/app/config.py`).  
+     * El **rate limiter** (`slowapi`) intercepta la llamada; la regla `@limiter.limit("10/minute")` (en `backend/app/routers/chat.py`) permite como máximo 10 peticiones por minuto por cliente.
+  
+  3. **Router de chat** (`backend/app/routers/chat.py`)  
+     * La función `chat` recibe el cuerpo de la petición (`ChatRequest` definido en `backend/app/schemas/chat.py`).  
+     * Usa la dependencia `get_db` (`backend/app/database.py`) para abrir una sesión con PostgreSQL.  
+     * Busca el cliente en la tabla `Client` (`backend/app/models/client.py`). Si no existe, devuelve **404**.
+  
+  4. **Servicio LLM** (`backend/app/services/llm_service.py`)  
+     * Con el mensaje del usuario y los datos del cliente, llama a `get_chat_response`.  
+     * Dentro de este archivo se construye la solicitud HTTP a la API de **Groq** usando la clave `groq_api_key` del archivo de configuración.  
+     * La respuesta del modelo (texto) se devuelve al router.
+  
+  5. **Respuesta al Frontend**  
+     * El router empaqueta la respuesta en `ChatResponse` (`backend/app/schemas/chat.py`) y la envía de vuelta al cliente HTTP.  
+     * En el navegador, `ChatSection.tsx` recibe el JSON `{ reply: "..." }` y lo muestra en la conversación.
+  
+  6. **Persistencia**  
+     * La tabla `Client` se crea automáticamente al iniciar la aplicación gracias a `Base.metadata.create_all(bind=engine)` en `backend/app/main.py`.  
+     * Cada vez que se necesite información del cliente (por ejemplo, nombre de la empresa o configuración de prompt), se lee de PostgreSQL mediante **SQLAlchemy**.
+  
+  **Orden de ejecución resumido**
+  
+  ```text
+  Usuario → UI (ChatSection.tsx) → fetch POST /chat
+     ↓
+  FastAPI (backend/app/main.py) → CORS → RateLimiter
+     ↓
+  router.chat (backend/app/routers/chat.py)
+     ↓
+  DB Session (backend/app/database.py) → SELECT client
+     ↓
+  llm_service.get_chat_response (backend/app/services/llm_service.py)
+     ↓
+  Llamada a Groq API → respuesta del modelo
+     ↓
+  router devuelve ChatResponse → UI muestra respuesta
+  ```
+  
+  ---
+  
+  ## **Componentes principales**  
+  
+  | Área | Archivo / Módulo | Responsabilidad |
+  |------|------------------|-----------------|
+  | **Frontend** | `app/components/ChatSection.tsx` | UI del chat, envía peticiones al backend. |
+  | | `app/components/Navbar.tsx`, `Card.tsx`, etc. | Layout y secciones estáticas. |
+  | | `next.config.ts`, `tailwind.config.js` | Configuración de Next.js y Tailwind CSS. |
+  | **Backend – API** | `backend/app/main.py` | Crea la aplicación FastAPI, configura CORS, rate limiting y registra routers. |
+  | | `backend/app/config.py` | Lee variables de entorno (`.env`) y expone `settings`. |
+  | | `backend/app/routers/chat.py` | Endpoint `/chat` que recibe mensajes y devuelve respuestas. |
+  | | `backend/app/routers/clients.py` | CRUD básico de clientes (no mostrado pero presente). |
+  | **Backend – Persistencia** | `backend/app/database
+
+---
 
 ### 2026-09-23 06:22 — Diego51602
 
