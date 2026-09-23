@@ -8,18 +8,28 @@ COMMIT_SHA = os.environ["GITHUB_SHA"]
 COMMIT_AUTHOR = os.environ.get("COMMIT_AUTHOR", "desconocido")
 COMMIT_MESSAGE = os.environ.get("COMMIT_MESSAGE", "")
 
-# Diff completo, con más contexto de líneas alrededor de cada cambio
+import os
+import subprocess
+import requests
+from datetime import datetime
+
+GROQ_API_KEY = os.environ["GROQ_API_KEY"]
+COMMIT_SHA = os.environ["GITHUB_SHA"]
+COMMIT_AUTHOR = os.environ.get("COMMIT_AUTHOR", "desconocido")
+COMMIT_MESSAGE = os.environ.get("COMMIT_MESSAGE", "")
+BEFORE_SHA = os.environ.get("BEFORE_SHA", "HEAD~1")
+AFTER_SHA = os.environ.get("AFTER_SHA", "HEAD")
+
 diff = subprocess.run(
-    ["git", "diff", "-U10", "HEAD~1", "HEAD"], capture_output=True, text=True
+    ["git", "diff", "-U10", BEFORE_SHA, AFTER_SHA], capture_output=True, text=True
 ).stdout
 
 if not diff.strip():
     print("No hay cambios que documentar.")
     exit(0)
 
-# Lista de archivos tocados, con líneas agregadas/eliminadas por archivo
 stat = subprocess.run(
-    ["git", "diff", "--stat", "HEAD~1", "HEAD"], capture_output=True, text=True
+    ["git", "diff", "--stat", BEFORE_SHA, AFTER_SHA], capture_output=True, text=True
 ).stdout
 
 diff_recortado = diff[:20000]
