@@ -33,7 +33,12 @@ def preguntar_groq(prompt, max_tokens=800):
             "messages": [{"role": "user", "content": prompt}],
         },
     )
-    return response.json()["choices"][0]["message"]["content"]
+    data = response.json()
+    if "choices" not in data:
+        print("ERROR de Groq, respuesta completa:")
+        print(data)
+        raise Exception(f"Groq no devolvió 'choices'. Respuesta: {data}")
+    return data["choices"][0]["message"]["content"]
 
 
 # 1. Resumen detallado de este cambio en particular
