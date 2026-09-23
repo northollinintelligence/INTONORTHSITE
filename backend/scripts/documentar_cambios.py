@@ -57,7 +57,7 @@ def preguntar_groq(prompt, max_tokens=1500):
     return data["choices"][0]["message"]["content"]
 
 
-# 1. Detalle técnico completo del cambio
+# Detalle técnico completo del cambio
 prompt_detalle = f"""Eres un ingeniero de software senior documentando un cambio de código
 para el historial técnico de un proyecto. Te doy un git diff con contexto extendido
 (10 líneas antes/después de cada cambio) y las estadísticas del commit.
