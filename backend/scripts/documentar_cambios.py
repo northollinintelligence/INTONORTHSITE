@@ -24,7 +24,7 @@ stat = subprocess.run(
 
 diff_recortado = diff[:20000]
 
-
+# Funcion para usar la API de Groq para generar respuestas
 def preguntar_groq(prompt, max_tokens=1500):
     response = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
